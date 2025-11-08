@@ -26,13 +26,16 @@ const carroSchema = new Schema({
         type: String,
         enum: ['Passeio', 'Van', 'Caminhonete', 'Caminhão']
     },
-    tipoCombustível: {
+    tipoCombustivel: {
         type: String,
-        enum: ['Etanol', 'Gasolina', 'Diesel', 'Elétrico']
+        enum: ['Etanol', 'Gasolina', 'Diesel', 'Elétrico', 'Flex']  // ADICIONEI 'Flex'
     },
     chassi: {
         type: String,
-        required: true
+        required: false  // ← MUDEI PARA FALSE (era true)
+    },
+    cor: {
+        type: String
     },
     
     // Relacionamentos

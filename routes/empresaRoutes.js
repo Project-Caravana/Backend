@@ -4,10 +4,6 @@ import { verificarAutenticacao, apenasEmpresa } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-// Rotas públicas
-router.post('/registrar', EmpresaController.registrar);
-router.post('/login', EmpresaController.login);
-
 // Rotas protegidas
 router.get('/:id', verificarAutenticacao, EmpresaController.getById);
 router.put('/:id', verificarAutenticacao, apenasEmpresa, EmpresaController.update);

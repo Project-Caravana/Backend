@@ -26,8 +26,43 @@ export const verificarAutenticacao = async (req, res, next) => {
         // Verifica e decodifica o token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         
+        // Normaliza tipo (pode vir como string ou array)
+        const tipo = Array.isArray(decoded.tipo) ? decoded.tipo[0] : decoded.tipo;
+        
         // Busca o usuário baseado no tipo
-        if (decoded.tipo === 'admin') {
+        if (tipo === 'funcionario') {
+            const funcionario = await Funcionario.findById(decoded.id).populate('empresa');
+            
+            if (!funcionario) {
+                return res.status(401).json({ 
+                    message: 'Funcionário não encontrado' 
+                });
+            }
+            
+            if (!funcionario.ativo) {
+                return res.status(401).json({ 
+                    message: 'Funcionário inativo. Entre em contato com sua empresa.' 
+                });
+            }
+            
+            if (!funcionario.empresa.ativa) {
+                return res.status(401).json({ 
+                    message: 'Empresa inativa. Entre em contato com o suporte.' 
+                });
+            }
+            
+            // Adiciona funcionário ao request
+            req.funcionario = funcionario;
+            req.empresa = funcionario.empresa;
+            req.userId = funcionario._id;
+            
+            // Define tipoUsuario baseado no perfil
+            // Se perfil é 'admin', trata como empresa para permissões
+            const perfil = Array.isArray(funcionario.perfil) ? funcionario.perfil[0] : funcionario.perfil;
+            req.tipoUsuario = perfil === 'admin' ? 'empresa' : 'funcionario';
+            req.perfil = perfil;
+            
+        } else if (tipo === 'admin') {
             const empresa = await Empresa.findById(decoded.id);
             
             if (!empresa) {
@@ -47,7 +82,7 @@ export const verificarAutenticacao = async (req, res, next) => {
             req.tipoUsuario = 'empresa';
             req.userId = empresa._id;
             
-        } else if (decoded.tipo === 'funcionario') {
+        } else if (tipo === 'funcionario') {
             const funcionario = await Funcionario.findById(decoded.id).populate('empresa');
             
             if (!funcionario) {
@@ -107,7 +142,7 @@ export const verificarAutenticacao = async (req, res, next) => {
 
 // Middleware - apenas empresas podem acessar
 export const apenasEmpresa = (req, res, next) => {
-    if (req.tipoUsuario !== 'empresa') {
+    if (req.tipoUsuario !== 'empresa') {  // ← CORRIGIDO: era 'req.perfil !== admin'
         return res.status(403).json({ 
             message: 'Acesso negado. Apenas empresas podem acessar este recurso.' 
         });

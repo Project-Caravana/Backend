@@ -55,59 +55,6 @@ const loginSchema = Joi.object({
 
 export default class EmpresaController {
     
-    // REGISTRAR nova empresa
-    static async registrar(req, res) {
-        try {
-            const { error, value } = empresaCreateSchema.validate(req.body, {
-                abortEarly: false
-            });
-            
-            if (error) {
-                return res.status(422).json({ 
-                    message: 'Dados inválidos',
-                    erros: error.details.map(err => err.message)
-                });
-            }
-            
-            // Verifica se CNPJ já existe
-            const cnpjExiste = await Empresa.findOne({ cnpj: value.cnpj });
-            if (cnpjExiste) {
-                return res.status(422).json({ 
-                    message: 'CNPJ já cadastrado' 
-                });
-            }
-            
-            // Verifica se email já existe
-            const emailExiste = await Empresa.findOne({ email: value.email });
-            if (emailExiste) {
-                return res.status(422).json({ 
-                    message: 'Email já cadastrado' 
-                });
-            }
-            
-            // Cria empresa (senha será hasheada automaticamente pelo middleware do model)
-            const empresa = new Empresa(value);
-            await empresa.save();
-            
-            return res.status(201).json({ 
-                message: 'Empresa cadastrada com sucesso!',
-                empresa: {
-                    id: empresa._id,
-                    nome: empresa.nome,
-                    cnpj: empresa.cnpj,
-                    email: empresa.email
-                }
-            });
-            
-        } catch (error) {
-            console.error('Erro ao registrar empresa:', error);
-            return res.status(500).json({ 
-                message: 'Erro ao registrar empresa',
-                erro: error.message 
-            });
-        }
-    }
-
     // BUSCAR empresa por ID
     static async getById(req, res) {
         try {

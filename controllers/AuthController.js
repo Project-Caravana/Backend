@@ -47,7 +47,7 @@ export default class AuthController {
             }
                         
             // Gera tokens
-            const accessToken = gerarToken(funcionario._id, funcionario.perfil);
+            const accessToken = gerarToken(funcionario._id, 'funcionario');
             
             await funcionario.save();
             
