@@ -79,12 +79,6 @@ const carroSchema = new Schema({
     }
 }, { timestamps: true });
 
-// Índice para garantir que um carro só pode ter um funcionário
-carroSchema.index({ funcionarioAtual: 1 }, { 
-    unique: true, 
-    sparse: true 
-});
-
 const Carro = mongoose.model("Carro", carroSchema);
 
 export default Carro;

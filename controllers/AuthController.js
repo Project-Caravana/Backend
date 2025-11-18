@@ -76,7 +76,7 @@ export default class AuthController {
     static async create(req, res) {
         try {
             const { nome, cpf, email, senha, telefone, empresaNome, empresaCnpj, empresaTelefone,
-                emrpesaEnderecoRua, emrpesaEnderecoNumero, empresaEnderecoBairro, empresaEnderecoCidade,
+                empresaEnderecoRua, empresaEnderecoNumero, empresaEnderecoBairro, empresaEnderecoCidade,
                 empresaEnderecoEstado, empresaEnderecoCep
              } = req.body;
             
@@ -111,8 +111,8 @@ export default class AuthController {
                 cnpj: empresaCnpj,
                 telefone: empresaTelefone,
                 endereco: {
-                    rua: emrpesaEnderecoRua,
-                    numero: emrpesaEnderecoNumero,
+                    rua: empresaEnderecoRua,
+                    numero: empresaEnderecoNumero,
                     bairro: empresaEnderecoBairro,
                     cidade: empresaEnderecoCidade,
                     estado: empresaEnderecoEstado,
