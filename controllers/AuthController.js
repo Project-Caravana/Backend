@@ -60,6 +60,7 @@ export default class AuthController {
                     cpf: funcionario.cpf,
                     perfil: funcionario.perfil,
                     email: funcionario.email,
+                    empresaId: funcionario.empresa._id,
                     empresa: funcionario.empresa.nome
                 }
             });
