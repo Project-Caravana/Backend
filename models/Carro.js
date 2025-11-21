@@ -28,7 +28,7 @@ const carroSchema = new Schema({
     },
     tipoCombustivel: {
         type: String,
-        enum: ['Etanol', 'Gasolina', 'Diesel', 'Elétrico', 'Flex']  // ADICIONEI 'Flex'
+        enum: ['Etanol', 'Gasolina', 'Diesel', 'Elétrico', 'Flex', 'Híbrido', 'GNV']  // ADICIONEI 'Flex'
     },
     chassi: {
         type: String,

@@ -48,8 +48,8 @@ const carroUpdateSchema = Joi.object({
         }),
     modelo: Joi.string().min(2),
     marca: Joi.string().min(2),
-    tipoVeiculo: Joi.string(),
-    tipoCombustivel: Joi.string(),
+    tipoVeiculo: Joi.string().valid('Passeio', 'Van', 'Caminhonete', 'Caminhão'), // ✅ ADICIONAR
+    tipoCombustivel: Joi.string().valid('Etanol', 'Gasolina', 'Diesel', 'Elétrico', 'Flex', 'Híbrido', 'GNV'), // ✅ ADICIONAR
     ano: Joi.number().min(1900).max(new Date().getFullYear() + 1),
     cor: Joi.string(),
     chassi: Joi.string(),
@@ -76,6 +76,90 @@ const alertasQuerySchema = obdQuerySchema.keys({
 });
 
 export default class CarroController {
+
+    static async getEstatisticasEmpresa(req, res)  {
+        try {
+            // Assumindo que o ID da empresa está em req.user após a autenticação
+            const empresaId = req.user.empresa; 
+            
+            // 1. Total de Carros Ativos
+            const totalCarrosAtivos = await Carro.countDocuments({ empresa: empresaId });
+
+            // 2. Dados Agregados de Carros (KM Rodado, Consumo Total)
+            const agregacaoCarros = await Carro.aggregate([
+                { $match: { empresa: empresaId } },
+                {
+                    $group: {
+                        _id: null,
+                        totalKmRodado: { $sum: "$kmTotal" },
+                        totalCombustivelGasto: { $sum: "$dadosOBD.combustivelConsumido" }, 
+                        carrosConsumo: {
+                            $push: {
+                                placa: "$placa",
+                                kmTotal: "$kmTotal",
+                                combustivelConsumido: "$dadosOBD.combustivelConsumido"
+                            }
+                        }
+                    }
+                }
+            ]);
+
+            const estatisticasAgregadas = agregacaoCarros.length > 0 
+                ? agregacaoCarros[0] 
+                : { totalKmRodado: 0, totalCombustivelGasto: 0, carrosConsumo: [] };
+
+            const kmRodado = estatisticasAgregadas.totalKmRodado || 0;
+            const combustivelGasto = estatisticasAgregadas.totalCombustivelGasto || 0;
+            
+            // Cálculo do consumo médio da frota: Km total / Combustível total
+            const consumoMedio = combustivelGasto > 0 ? (kmRodado / combustivelGasto) : 0;
+            
+            // Prepara dados para o gráfico (consumo médio individual de cada carro)
+            const carrosConsumo = estatisticasAgregadas.carrosConsumo
+                .map(c => ({
+                    placa: c.placa,
+                    kmRodado: c.kmTotal,
+                    // Consumo médio do carro: Km rodado / Combustível consumido
+                    consumoMedio: c.combustivelConsumido > 0 ? (c.kmTotal / c.combustivelConsumido) : 0
+                }))
+                // Filtra para mostrar apenas carros que têm consumo > 0 para o gráfico (opcional)
+                .filter(c => c.consumoMedio > 0); 
+
+            // 3. Total de Alertas (Exemplo: Últimos 30 dias)
+            const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            
+            // Buscar IDs de carros para filtrar as leituras
+            const carrosDaEmpresa = await Carro.find({ empresa: empresaId }, { _id: 1 });
+            const carroIds = carrosDaEmpresa.map(carro => carro._id);
+
+            const totalAlertas = await LeituraOBD.countDocuments({
+                carro: { $in: carroIds },
+                'alerta.severidade': { $gt: 0 }, // Assumindo severidade > 0 para alerta
+                createdAt: { $gte: trintaDiasAtras }
+            });
+
+            const estatisticas = {
+                totalCarrosAtivos,
+                kmRodado: parseFloat(kmRodado.toFixed(1)), // Retorna como número formatado
+                combustivelGasto: parseFloat(combustivelGasto.toFixed(2)),
+                consumoMedio: parseFloat(consumoMedio.toFixed(1)),
+                alertas: totalAlertas,
+                carrosConsumo
+            };
+
+            return res.status(200).json({
+                message: "Estatísticas do Dashboard retornadas com sucesso",
+                estatisticas
+            });
+
+        } catch (error) {
+            console.error('Erro ao buscar estatísticas do dashboard:', error);
+            return res.status(500).json({
+                message: 'Erro ao buscar estatísticas do dashboard',
+                erro: error.message
+            });
+        }
+    }
     
     // CREATE - Criar novo carro
     static async create(req, res) {
@@ -476,34 +560,42 @@ export default class CarroController {
             }
             
             // 2. CRIAÇÃO DO HISTÓRICO (LeituraOBD)
-            // Os dadosOBD do body do request correspondem ao campo 'dados' no modelo LeituraOBD.
-            // O modelo LeituraOBD.js tem um pré-save hook para gerar alertas se necessário.
             const novaLeitura = new LeituraOBD({
                 carro: carroId,
                 empresa: carro.empresa,
-                // Assume que se o carro está em uso, o funcionárioAtual é quem está dirigindo
                 funcionario: carro.funcionarioAtual, 
                 dados: dadosOBD,
             });
 
-            await novaLeitura.save(); // Salva o registro histórico
+            await novaLeitura.save();
             
             // 3. ATUALIZAÇÃO DOS DADOS EM TEMPO REAL (Carro)
-            // Atualiza o documento Carro com os dados mais recentes para tempo real
+            const novaDistancia = dadosOBD.distanciaPercorrida || 0; // Assume 0 se não vier o dado
+            const novoKmTotal = carro.kmTotal + novaDistancia; // 👈 CORREÇÃO AQUI
+
             const carroAtualizado = await Carro.findByIdAndUpdate(
                 carroId,
                 {
                     dadosOBD: {
                         ...dadosOBD,
-                        ultimaAtualizacao: novaLeitura.createdAt // Usa o timestamp da novaLeitura
-                    }
+                        ultimaAtualizacao: novaLeitura.createdAt
+                    },
+                    // ✅ Atualiza kmTotal somando a nova distância percorrida
+                    kmTotal: novoKmTotal
                 },
                 { new: true }
             );
             
-            // 4. Emite evento via Socket.IO (para front-end)
+            // 4. ✅ Emite evento via Socket.IO (para front-end)
             if (req.io) {
-                req.io.emit(`carro:${carroId}:obd`, carroAtualizado.dadosOBD);
+                // Emite para a room específica do carro
+                req.io.to(`carro:${carroId}`).emit('obd:atualizado', {
+                    carroId: carroId,
+                    dadosOBD: carroAtualizado.dadosOBD,
+                    kmTotal: carroAtualizado.kmTotal
+                });
+                
+                console.log(`📡 Dados OBD emitidos para carro:${carroId}`);
             }
             
             return res.status(200).json({ 
