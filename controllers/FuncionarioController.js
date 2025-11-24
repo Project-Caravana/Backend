@@ -38,9 +38,15 @@ export default class FuncionarioController {
     // CREATE - Criar funcionário
     static async addFuncionarioToEmpresa(req, res) {
         try {
-            const { nome, cpf, email, senha, telefone, empresaId, perfil } = req.body;
+            const { nome, cpf, email, senha, telefone, perfil } = req.body;
+            const empresaId = req.body.empresaId || req.body.empresa;
             
-            // Verifica se empresa existe
+            if (!empresaId) {
+                return res.status(422).json({ 
+                    message: 'ID da empresa é obrigatório' 
+                });
+            }
+            
             const empresa = await Empresa.findById(empresaId);
             if (!empresa) {
                 return res.status(404).json({ 
@@ -48,7 +54,6 @@ export default class FuncionarioController {
                 });
             }
             
-            // Verifica se CPF já existe
             const cpfExiste = await Funcionario.findOne({ cpf });
             if (cpfExiste) {
                 return res.status(422).json({ 
@@ -56,7 +61,6 @@ export default class FuncionarioController {
                 });
             }
             
-            // Verifica se email já existe
             const emailExiste = await Funcionario.findOne({ email });
             if (emailExiste) {
                 return res.status(422).json({ 
@@ -64,10 +68,8 @@ export default class FuncionarioController {
                 });
             }
             
-            // Hash da senha
             const senhaHash = await argon2.hash(senha);
             
-            // Cria o novo funcionário
             const funcionario = new Funcionario({
                 nome, 
                 cpf, 
@@ -75,12 +77,11 @@ export default class FuncionarioController {
                 senha: senhaHash,
                 telefone, 
                 empresa: empresaId,
-                perfil,
+                perfil: perfil || 'funcionario', // ⭐ String, não array
                 ativo: true
             });
             await funcionario.save();
             
-            // Adiciona ao array de funcionários da empresa
             empresa.funcionarios.push(funcionario._id);
             await empresa.save();
             
@@ -89,7 +90,8 @@ export default class FuncionarioController {
                 funcionario: {
                     id: funcionario._id,
                     nome: funcionario.nome,
-                    email: funcionario.email
+                    email: funcionario.email,
+                    perfil: funcionario.perfil
                 }
             });
             
@@ -97,6 +99,120 @@ export default class FuncionarioController {
             console.error('Erro ao adicionar funcionário:', error);
             return res.status(500).json({ 
                 message: 'Erro ao adicionar funcionário',
+                erro: error.message 
+            });
+        }
+    }
+
+    // UPDATE - Atualizar funcionário
+    static async update(req, res) {
+        try {
+            const { id } = req.params;
+            const { nome, cpf, email, telefone, perfil, ativo } = req.body;
+            
+            // Busca o funcionário
+            const funcionarioExistente = await Funcionario.findById(id);
+            if (!funcionarioExistente) {
+                return res.status(404).json({ 
+                    message: 'Funcionário não encontrado' 
+                });
+            }
+            
+            // Verifica se o usuário tem permissão para editar
+            // (Se for empresa, deve ser da mesma empresa. Se for funcionário, só pode editar a si mesmo)
+            if (req.empresa) {
+                if (funcionarioExistente.empresa.toString() !== req.empresa._id.toString()) {
+                    return res.status(403).json({ 
+                        message: 'Você não tem permissão para editar este funcionário' 
+                    });
+                }
+            } else if (req.funcionario) {
+                if (funcionarioExistente._id.toString() !== req.funcionario._id.toString()) {
+                    return res.status(403).json({ 
+                        message: 'Você só pode editar seus próprios dados' 
+                    });
+                }
+            }
+            
+            // Se CPF foi alterado, verifica se já existe
+            if (cpf && cpf !== funcionarioExistente.cpf) {
+                const cpfExiste = await Funcionario.findOne({ 
+                    cpf, 
+                    _id: { $ne: id } 
+                });
+                if (cpfExiste) {
+                    return res.status(422).json({ 
+                        message: 'CPF já cadastrado para outro funcionário' 
+                    });
+                }
+            }
+            
+            // Se email foi alterado, verifica se já existe
+            if (email && email !== funcionarioExistente.email) {
+                const emailExiste = await Funcionario.findOne({ 
+                    email, 
+                    _id: { $ne: id } 
+                });
+                if (emailExiste) {
+                    return res.status(422).json({ 
+                        message: 'Email já cadastrado para outro funcionário' 
+                    });
+                }
+            }
+            
+            // Monta objeto de atualização (apenas campos fornecidos)
+            const updateData = {};
+            if (nome) updateData.nome = nome;
+            if (cpf) updateData.cpf = cpf;
+            if (email) updateData.email = email;
+            if (telefone) updateData.telefone = telefone;
+            if (perfil) updateData.perfil = perfil;
+            if (typeof ativo === 'boolean') updateData.ativo = ativo;
+            
+            // Atualiza o funcionário
+            const funcionario = await Funcionario.findByIdAndUpdate(
+                id,
+                updateData,
+                { new: true, runValidators: true }
+            )
+            .populate('empresa', 'nome cnpj')
+            .populate('carroAtual', 'placa modelo marca');
+            
+            return res.status(200).json({ 
+                message: 'Funcionário atualizado com sucesso!',
+                funcionario 
+            });
+            
+        } catch (error) {
+            console.error('Erro ao atualizar funcionário:', error);
+            return res.status(500).json({ 
+                message: 'Erro ao atualizar funcionário',
+                erro: error.message 
+            });
+        }
+    }
+
+    static async getDisponiveis(req, res) {
+        try {
+            const filtro = {
+                empresa: req.empresa._id,
+                carroAtual: null, // Apenas funcionários sem carro
+                ativo: true
+            };
+            
+            const funcionarios = await Funcionario.find(filtro)
+                .select('nome cpf email telefone cnh')
+                .sort({ nome: 1 });
+            
+            return res.status(200).json({
+                total: funcionarios.length,
+                funcionarios
+            });
+            
+        } catch (error) {
+            console.error('Erro ao buscar funcionários disponíveis:', error);
+            return res.status(500).json({ 
+                message: 'Erro ao buscar funcionários disponíveis',
                 erro: error.message 
             });
         }

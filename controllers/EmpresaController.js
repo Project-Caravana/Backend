@@ -2,7 +2,6 @@ import Empresa from "../models/Empresa.js";
 import Carro from "../models/Carro.js";
 import Funcionario from "../models/Funcionario.js";
 import Joi from 'joi';
-import { gerarToken } from '../helpers/auth.js';
 
 // Schema para criar empresa
 const empresaCreateSchema = Joi.object({
@@ -45,12 +44,6 @@ const empresaUpdateSchema = Joi.object({
         estado: Joi.string(),
         cep: Joi.string()
     })
-});
-
-// Schema para login
-const loginSchema = Joi.object({
-    email: Joi.string().required().email(),
-    senha: Joi.string().required()
 });
 
 export default class EmpresaController {
@@ -138,21 +131,21 @@ export default class EmpresaController {
             const carrosDisponiveis = await Carro.countDocuments({ empresa: id, status: 'disponivel' });
             const carrosEmUso = await Carro.countDocuments({ empresa: id, status: 'em_uso' });
             const carrosManutencao = await Carro.countDocuments({ empresa: id, status: 'manutencao' });
-            const totalFuncionarios = await Funcionario.countDocuments({ empresa: id });
             const funcionariosAtivos = await Funcionario.countDocuments({ empresa: id, ativo: true });
+            const kmRodadosMes = 8;
             
             return res.status(200).json({
                 empresa: {
                     nome: empresa.nome,
                     cnpj: empresa.cnpj,
-                    tipoPlano: empresa.tipoPlano
                 },
                 estatisticas: {
                     carros: {
                         total: totalCarros,
                         disponiveis: carrosDisponiveis,
                         emUso: carrosEmUso,
-                        manutencao: carrosManutencao
+                        manutencao: carrosManutencao,
+                        rodadoMes: kmRodadosMes
                     },
                     funcionarios: {
                         ativos: funcionariosAtivos

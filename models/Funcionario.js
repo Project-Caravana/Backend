@@ -38,7 +38,7 @@ const funcionarioSchema = new Schema({
         default: null
     },
     perfil: {
-        type: [String],
+        type: String,
         enum: ['funcionario', 'admin', 'motorista'],
         default: ['funcionario']
     },

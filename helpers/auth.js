@@ -1,9 +1,9 @@
 import jwt from "jsonwebtoken";
 
 // Gerar access token (curta duração)
-export const gerarToken = (id, tipo) => {
+export const gerarToken = (id) => {
     return jwt.sign(
-        { id, tipo }, // tipo: 'empresa' ou 'funcionario'
+        { id },
         process.env.JWT_SECRET,
         { expiresIn: '2h' } // 2 horas
     );

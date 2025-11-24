@@ -3,8 +3,6 @@ import Empresa from "../models/Empresa.js";
 import Funcionario from "../models/Funcionario.js";
 import { gerarToken } from "../helpers/auth.js";
 
-
-
 export default class AuthController {
     static async login(req, res) {
         try {
@@ -16,8 +14,8 @@ export default class AuthController {
                 });
             }
             
-            // Busca funcionário com senha
             const funcionario = await Funcionario.findOne({ email }).select('+senha').populate('empresa');
+            
             
             if (!funcionario) {
                 return res.status(401).json({ 
@@ -32,28 +30,32 @@ export default class AuthController {
                 });
             }
             
-            // Verifica se funcionário está ativo
             if (!funcionario.ativo) {
                 return res.status(401).json({ 
                     message: 'Funcionário inativo. Entre em contato com sua empresa.' 
                 });
             }
+
+            const empresa = await Empresa.findOne(funcionario.empresa);
             
-            // Verifica se empresa está ativa
-            if (!funcionario.empresa.ativa) {
+            if (!empresa.ativa) {
                 return res.status(401).json({ 
                     message: 'Empresa inativa. Entre em contato com o suporte.' 
                 });
             }
-                        
-            // Gera tokens
-            const accessToken = gerarToken(funcionario._id, 'funcionario');
             
-            await funcionario.save();
+            // Perfil agora já é string no banco
+            const token = gerarToken(funcionario._id);
+
+            res.cookie('auth_token', token, {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'strict',
+                maxAge: 7 * 24 * 60 * 60 * 1000
+            });
             
             return res.status(200).json({ 
                 message: 'Login realizado com sucesso!',
-                accessToken,
                 funcionario: {
                     id: funcionario._id,
                     nome: funcionario.nome,
@@ -69,6 +71,52 @@ export default class AuthController {
             console.error('Erro ao fazer login:', error);
             return res.status(500).json({ 
                 message: 'Erro ao fazer login',
+                erro: error.message 
+            });
+        }
+    }
+
+    static async logout(req, res) {
+        res.cookie('auth_token', '', {
+            httpOnly: true, 
+            secure: process.env.NODE_ENV === 'production', 
+            sameSite: 'strict', 
+            maxAge: 0 // Expira imediatamente
+        });
+
+        return res.status(200).json({
+            message: 'Logout realizado com sucesso!'
+        });
+    }
+
+    static async me(req, res) {
+        try {
+            const funcionario = req.funcionario;
+            const empresa = req.empresa;
+            
+            if (!funcionario) {
+                return res.status(401).json({ 
+                    message: 'Usuário não autenticado' 
+                });
+            }
+            
+            return res.status(200).json({
+                funcionario: {
+                    id: funcionario._id,
+                    nome: funcionario.nome,
+                    cpf: funcionario.cpf,
+                    email: funcionario.email,
+                    perfil: funcionario.perfil,
+                    ativo: funcionario.ativo,
+                    empresaId: empresa._id,
+                    empresa: empresa.nome
+                }
+            });
+            
+        } catch (error) {
+            console.error('❌ Erro ao buscar dados do usuário:', error);
+            return res.status(500).json({ 
+                message: 'Erro ao buscar dados do usuário',
                 erro: error.message 
             });
         }
@@ -138,7 +186,8 @@ export default class AuthController {
                     id: funcionario._id,
                     nome: funcionario.nome,
                     cpf: funcionario.cpf,
-                    email: funcionario.email
+                    email: funcionario.email,
+                    perfil: funcionario.perfil
                 },
                 empresa: {
                     id: empresa._id,

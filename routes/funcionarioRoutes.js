@@ -1,17 +1,21 @@
 import express from 'express';
 import FuncionarioController from '../controllers/FuncionarioController.js';
-import { verificarAutenticacao, apenasEmpresa, apenasFuncionario, apenasProprioFuncionario } from '../middlewares/auth.js';
+import { apenasAdmin, podeGerenciarFuncionarios, verificarAutenticacao } from '../middlewares/auth.js';
 
 const router = express.Router();
 
-// Rotas protegidas - apenas empresa
-router.delete('/:id', verificarAutenticacao, apenasEmpresa, FuncionarioController.delete);
+// ✅ Rotas específicas PRIMEIRO
+router.get('/disponiveis', verificarAutenticacao, FuncionarioController.getDisponiveis);
 
-// Rotas protegidas - empresa e funcionário
+// Rotas de criação
+router.post('/create', verificarAutenticacao, podeGerenciarFuncionarios, FuncionarioController.addFuncionarioToEmpresa);
+
+// Rotas de listagem
 router.get('/', verificarAutenticacao, FuncionarioController.getAll);
-router.get('/:id', verificarAutenticacao, apenasProprioFuncionario, FuncionarioController.getById);
 
-// Rotas protegidas - apenas funcionário
-router.get('/:id/meu-carro', verificarAutenticacao, apenasFuncionario, FuncionarioController.meuCarro);
+// Rotas dinâmicas POR ÚLTIMO
+router.get('/:id', verificarAutenticacao, FuncionarioController.getById);
+router.put('/:id', verificarAutenticacao, apenasAdmin, FuncionarioController.update);
+router.delete('/:id', verificarAutenticacao, apenasAdmin, FuncionarioController.delete);
 
 export default router;

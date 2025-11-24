@@ -4,109 +4,45 @@ import Funcionario from "../models/Funcionario.js";
 
 // Middleware principal - verifica se está autenticado
 export const verificarAutenticacao = async (req, res, next) => {
+    
     try {
         // Pega o token do header
-        const authHeader = req.headers.authorization;
+        const token = req.cookies.auth_token;
         
-        if (!authHeader) {
+        if (!token) {
             return res.status(401).json({ 
                 message: 'Token não fornecido. Acesso negado.' 
             });
         }
-        
-        // Remove 'Bearer ' do token
-        const token = authHeader.replace('Bearer ', '');
-        
-        if (!token) {
-            return res.status(401).json({ 
-                message: 'Token inválido. Acesso negado.' 
-            });
-        }
 
         // Verifica e decodifica o token
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // Normaliza tipo (pode vir como string ou array)
-        const tipo = Array.isArray(decoded.tipo) ? decoded.tipo[0] : decoded.tipo;
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);        
         
         // Busca o usuário baseado no tipo
-        if (tipo === 'funcionario') {
-            const funcionario = await Funcionario.findById(decoded.id).populate('empresa');
+        if (decoded) {
+            const funcionario = await Funcionario.findById(decoded.id);
+            const empresa = await Empresa.findById(funcionario.empresa);
             
             if (!funcionario) {
-                return res.status(401).json({ 
-                    message: 'Funcionário não encontrado' 
-                });
-            }
-            
-            if (!funcionario.ativo) {
-                return res.status(401).json({ 
-                    message: 'Funcionário inativo. Entre em contato com sua empresa.' 
-                });
-            }
-            
-            if (!funcionario.empresa.ativa) {
-                return res.status(401).json({ 
-                    message: 'Empresa inativa. Entre em contato com o suporte.' 
-                });
-            }
-            
-            // Adiciona funcionário ao request
-            req.funcionario = funcionario;
-            req.empresa = funcionario.empresa;
-            req.userId = funcionario._id;
-            
-            // Define tipoUsuario baseado no perfil
-            // Se perfil é 'admin', trata como empresa para permissões
-            const perfil = Array.isArray(funcionario.perfil) ? funcionario.perfil[0] : funcionario.perfil;
-            req.tipoUsuario = perfil === 'admin' ? 'empresa' : 'funcionario';
-            req.perfil = perfil;
-            
-        } else if (tipo === 'admin') {
-            const empresa = await Empresa.findById(decoded.id);
-            
-            if (!empresa) {
                 return res.status(401).json({ 
                     message: 'Empresa não encontrada' 
                 });
             }
             
+            if (!funcionario.ativo) {
+                return res.status(401).json({ 
+                    message: 'Funcionário inativo. Entre em contato com o suporte.' 
+                });
+            }
+
             if (!empresa.ativa) {
                 return res.status(401).json({ 
                     message: 'Empresa inativa. Entre em contato com o suporte.' 
                 });
             }
             
-            // Adiciona empresa ao request
-            req.empresa = empresa;
-            req.tipoUsuario = 'empresa';
-            req.userId = empresa._id;
-            
-        } else if (tipo === 'funcionario') {
-            const funcionario = await Funcionario.findById(decoded.id).populate('empresa');
-            
-            if (!funcionario) {
-                return res.status(401).json({ 
-                    message: 'Funcionário não encontrado' 
-                });
-            }
-            
-            if (!funcionario.ativo) {
-                return res.status(401).json({ 
-                    message: 'Funcionário inativo. Entre em contato com sua empresa.' 
-                });
-            }
-            
-            if (!funcionario.empresa.ativa) {
-                return res.status(401).json({ 
-                    message: 'Empresa inativa. Entre em contato com o suporte.' 
-                });
-            }
-            
-            // Adiciona funcionário ao request
             req.funcionario = funcionario;
-            req.empresa = funcionario.empresa;
-            req.tipoUsuario = 'funcionario';
+            req.empresa = empresa;
             req.userId = funcionario._id;
             
         } else {
@@ -140,11 +76,52 @@ export const verificarAutenticacao = async (req, res, next) => {
     }
 };
 
-// Middleware - apenas empresas podem acessar
-export const apenasEmpresa = (req, res, next) => {
-    if (req.tipoUsuario !== 'empresa') {  // ← CORRIGIDO: era 'req.perfil !== admin'
+export const podeGerenciarFuncionarios = async (req, res, next) => {
+    try {
+        // Empresa (admin) pode criar qualquer tipo de funcionário
+        if (req.funcionario.perfil === "admin") {
+            return next();
+        }
+
+        // Funcionário só pode criar se for admin
+        if (req.funcionario.perfil === "funcionario") {
+            const perfilCriando = req.body.perfil;
+            
+            // Se for funcionário comum, só pode criar motorista
+            if (perfilCriando === 'funcionario') {
+                // VERIFICAÇÃO CRÍTICA: Impedir criação de 'funcionario' ou 'admin'
+                if (perfilCriando !== 'motorista') {
+                    return res.status(403).json({ 
+                        message: 'Funcionários só podem criar motoristas. Para criar admins ou funcionários, entre em contato com um administrador.' 
+                    });
+                }
+                
+                return next();
+            }
+            
+            // Motoristas não podem criar outros funcionários
+            return res.status(403).json({ 
+                message: 'Você não tem permissão para criar funcionários' 
+            });
+        }
+
         return res.status(403).json({ 
-            message: 'Acesso negado. Apenas empresas podem acessar este recurso.' 
+            message: 'Você não tem permissão para esta operação' 
+        });
+
+    } catch (error) {
+        console.error('Erro ao verificar permissões:', error);
+        return res.status(500).json({ 
+            message: 'Erro ao verificar permissões' 
+        });
+    }
+};
+
+// Middleware - apenas empresas podem acessar
+export const apenasAdmin = (req, res, next) => {
+    if (req.funcionario.perfil !== 'admin') {
+        return res.status(403).json({ 
+            message: 'Acesso negado. Apenas admin podem acessar este recurso.' 
         });
     }
     next();
@@ -152,7 +129,7 @@ export const apenasEmpresa = (req, res, next) => {
 
 // Middleware - apenas funcionários podem acessar
 export const apenasFuncionario = (req, res, next) => {
-    if (req.tipoUsuario !== 'funcionario') {
+    if (req.funcionario.perfil !== 'funcionario' || req.funcionario.perfil !== 'admin') {
         return res.status(403).json({ 
             message: 'Acesso negado. Apenas funcionários podem acessar este recurso.' 
         });
@@ -170,8 +147,8 @@ export const verificarEmpresa = (req, res, next) => {
         });
     }
     
-    // Se for empresa, verifica se é a mesma
-    if (req.tipoUsuario === 'empresa') {
+    // Se for admin, verifica se é a mesma
+    if (req.funcionario.perfil === 'admin') {
         if (req.empresa._id.toString() !== empresaId) {
             return res.status(403).json({ 
                 message: 'Você não tem permissão para acessar recursos de outra empresa' 
@@ -180,7 +157,7 @@ export const verificarEmpresa = (req, res, next) => {
     }
     
     // Se for funcionário, verifica se pertence à empresa
-    if (req.tipoUsuario === 'funcionario') {
+    if (req.funcionario.perfil === 'funcionario') {
         if (req.empresa._id.toString() !== empresaId) {
             return res.status(403).json({ 
                 message: 'Você não tem permissão para acessar recursos de outra empresa' 
@@ -188,20 +165,5 @@ export const verificarEmpresa = (req, res, next) => {
         }
     }
     
-    next();
-};
-
-// Middleware - verifica se funcionário pode acessar apenas seus próprios dados
-export const apenasProprioFuncionario = (req, res, next) => {
-    const funcionarioId = req.params.id || req.params.funcionarioId;
-    
-    if (req.tipoUsuario === 'funcionario') {
-        if (req.funcionario._id.toString() !== funcionarioId) {
-            return res.status(403).json({ 
-                message: 'Você só pode acessar seus próprios dados' 
-            });
-        }
-    }
-    // Empresas podem acessar dados de seus funcionários
     next();
 };

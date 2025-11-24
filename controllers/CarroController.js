@@ -48,8 +48,8 @@ const carroUpdateSchema = Joi.object({
         }),
     modelo: Joi.string().min(2),
     marca: Joi.string().min(2),
-    tipoVeiculo: Joi.string().valid('Passeio', 'Van', 'Caminhonete', 'Caminhão'), // ✅ ADICIONAR
-    tipoCombustivel: Joi.string().valid('Etanol', 'Gasolina', 'Diesel', 'Elétrico', 'Flex', 'Híbrido', 'GNV'), // ✅ ADICIONAR
+    tipoVeiculo: Joi.string().valid('Passeio', 'Van', 'Caminhonete', 'Caminhão'),
+    tipoCombustivel: Joi.string().valid('Etanol', 'Gasolina', 'Diesel', 'Elétrico', 'Flex', 'Híbrido', 'GNV'),
     ano: Joi.number().min(1900).max(new Date().getFullYear() + 1),
     cor: Joi.string(),
     chassi: Joi.string(),
@@ -477,8 +477,9 @@ export default class CarroController {
             carro.status = 'em_uso';
             await carro.save();
             
-            funcionario.carroAtual = carroId;
-            await funcionario.save();
+            await Funcionario.findByIdAndUpdate(funcionarioId, {
+                carroAtual: carroId
+            });
             
             return res.status(200).json({ 
                 message: 'Funcionário vinculado ao carro com sucesso!',
@@ -594,8 +595,6 @@ export default class CarroController {
                     dadosOBD: carroAtualizado.dadosOBD,
                     kmTotal: carroAtualizado.kmTotal
                 });
-                
-                console.log(`📡 Dados OBD emitidos para carro:${carroId}`);
             }
             
             return res.status(200).json({ 

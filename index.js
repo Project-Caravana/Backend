@@ -3,6 +3,7 @@ import { Server } from "socket.io";
 import cors from 'cors';
 import http from "http";
 import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
 import router from './routes/authRoutes.js';
 import veiculoRoutes from './routes/veiculoRoutes.js';
 import funcionarioRoutes from './routes/funcionarioRoutes.js';
@@ -25,6 +26,8 @@ const io = new Server(server, {
   }
 });
 
+app.use(cookieParser());
+
 app.use(express.json());
 
 // Middleware para adicionar io ao request
@@ -41,7 +44,6 @@ app.use("/api/empresa", empresaRoutes)
 
 // Socket.IO - Conexão
 io.on('connection', (socket) => {
-  console.log('✅ Cliente conectado:', socket.id);
   
   socket.on('subscribe', (carroId) => {
     socket.join(`carro:${carroId}`);
@@ -49,7 +51,6 @@ io.on('connection', (socket) => {
   });
   
   socket.on('disconnect', () => {
-    console.log('❌ Cliente desconectado:', socket.id);
   });
 });
 
