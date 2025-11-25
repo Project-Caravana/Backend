@@ -77,75 +77,125 @@ const alertasQuerySchema = obdQuerySchema.keys({
 
 export default class CarroController {
 
-    static async getEstatisticasEmpresa(req, res)  {
+    static async getEstatisticasEmpresa(req, res) {
         try {
-            // Assumindo que o ID da empresa está em req.user após a autenticação
-            const empresaId = req.user.empresa; 
+            // Pega o ID da empresa do usuário autenticado
+            const empresaId = req.empresa?._id || req.user?.empresa;
             
+            if (!empresaId) {
+                return res.status(400).json({
+                    message: 'Empresa não identificada'
+                });
+            }
+            
+            console.log('📊 Buscando estatísticas para empresa:', empresaId);
+
             // 1. Total de Carros Ativos
             const totalCarrosAtivos = await Carro.countDocuments({ empresa: empresaId });
 
-            // 2. Dados Agregados de Carros (KM Rodado, Consumo Total)
-            const agregacaoCarros = await Carro.aggregate([
-                { $match: { empresa: empresaId } },
+            // 2. Buscar IDs de carros para filtrar as leituras
+            const carrosDaEmpresa = await Carro.find({ empresa: empresaId }, { _id: 1, placa: 1, modelo: 1, marca: 1 });
+            const carroIds = carrosDaEmpresa.map(carro => carro._id);
+
+            // 3. Dados de KM e Combustível do mês atual
+            const inicioMes = new Date();
+            inicioMes.setDate(1);
+            inicioMes.setHours(0, 0, 0, 0);
+
+            const leiturasMes = await LeituraOBD.aggregate([
+                {
+                    $match: {
+                        carro: { $in: carroIds },
+                        createdAt: { $gte: inicioMes }
+                    }
+                },
                 {
                     $group: {
                         _id: null,
-                        totalKmRodado: { $sum: "$kmTotal" },
-                        totalCombustivelGasto: { $sum: "$dadosOBD.combustivelConsumido" }, 
-                        carrosConsumo: {
-                            $push: {
-                                placa: "$placa",
-                                kmTotal: "$kmTotal",
-                                combustivelConsumido: "$dadosOBD.combustivelConsumido"
-                            }
-                        }
+                        totalKmPercorrido: { $sum: '$dados.distanciaPercorrida' },
+                        totalCombustivelConsumido: { $sum: '$dados.consumoInstantaneo' }
                     }
                 }
             ]);
 
-            const estatisticasAgregadas = agregacaoCarros.length > 0 
-                ? agregacaoCarros[0] 
-                : { totalKmRodado: 0, totalCombustivelGasto: 0, carrosConsumo: [] };
+            const dadosMes = leiturasMes[0] || { totalKmPercorrido: 0, totalCombustivelConsumido: 0 };
+            const kmRodado = dadosMes.totalKmPercorrido || 0;
+            const combustivelGasto = dadosMes.totalCombustivelConsumido || 0;
 
-            const kmRodado = estatisticasAgregadas.totalKmRodado || 0;
-            const combustivelGasto = estatisticasAgregadas.totalCombustivelGasto || 0;
-            
-            // Cálculo do consumo médio da frota: Km total / Combustível total
+            // 4. Consumo médio da frota
             const consumoMedio = combustivelGasto > 0 ? (kmRodado / combustivelGasto) : 0;
-            
-            // Prepara dados para o gráfico (consumo médio individual de cada carro)
-            const carrosConsumo = estatisticasAgregadas.carrosConsumo
-                .map(c => ({
-                    placa: c.placa,
-                    kmRodado: c.kmTotal,
-                    // Consumo médio do carro: Km rodado / Combustível consumido
-                    consumoMedio: c.combustivelConsumido > 0 ? (c.kmTotal / c.combustivelConsumido) : 0
-                }))
-                // Filtra para mostrar apenas carros que têm consumo > 0 para o gráfico (opcional)
-                .filter(c => c.consumoMedio > 0); 
 
-            // 3. Total de Alertas (Exemplo: Últimos 30 dias)
+            // 5. Top 5 carros que mais consomem (pior consumo = maior consumo de combustível)
+            const consumoPorCarro = await LeituraOBD.aggregate([
+                {
+                    $match: {
+                        carro: { $in: carroIds },
+                        createdAt: { $gte: inicioMes }
+                    }
+                },
+                {
+                    $group: {
+                        _id: '$carro',
+                        totalKm: { $sum: '$dados.distanciaPercorrida' },
+                        totalCombustivel: { $sum: '$dados.consumoInstantaneo' }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 1,
+                        totalKm: 1,
+                        totalCombustivel: 1,
+                        consumo: {
+                            $cond: {
+                                if: { $gt: ['$totalCombustivel', 0] },
+                                then: { $divide: ['$totalKm', '$totalCombustivel'] },
+                                else: 0
+                            }
+                        }
+                    }
+                },
+                { $sort: { consumo: 1 } }, // Ordena do pior para o melhor
+                { $limit: 5 }
+            ]);
+
+            // Popula os dados dos carros
+            const carrosConsumo = await Promise.all(
+                consumoPorCarro.map(async (item) => {
+                    const carro = carrosDaEmpresa.find(c => c._id.equals(item._id));
+                    return {
+                        placa: carro?.placa || 'N/A',
+                        modelo: carro?.modelo || 'N/A',
+                        marca: carro?.marca || '',
+                        consumo: parseFloat(item.consumo.toFixed(2)),
+                        kmRodado: parseFloat(item.totalKm.toFixed(1)),
+                        combustivelGasto: parseFloat(item.totalCombustivel.toFixed(2))
+                    };
+                })
+            );
+
+            // 6. Total de Alertas (Últimos 30 dias)
             const trintaDiasAtras = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-            
-            // Buscar IDs de carros para filtrar as leituras
-            const carrosDaEmpresa = await Carro.find({ empresa: empresaId }, { _id: 1 });
-            const carroIds = carrosDaEmpresa.map(carro => carro._id);
 
             const totalAlertas = await LeituraOBD.countDocuments({
                 carro: { $in: carroIds },
-                'alerta.severidade': { $gt: 0 }, // Assumindo severidade > 0 para alerta
-                createdAt: { $gte: trintaDiasAtras }
+                createdAt: { $gte: trintaDiasAtras },
+                $or: [
+                    { 'dados.milStatus': true },
+                    { 'dados.dtcCount': { $gt: 0 } },
+                    { 'alertas.0': { $exists: true } }
+                ]
             });
 
             const estatisticas = {
                 totalCarrosAtivos,
-                kmRodado: parseFloat(kmRodado.toFixed(1)), // Retorna como número formatado
+                kmRodado: parseFloat(kmRodado.toFixed(1)),
                 combustivelGasto: parseFloat(combustivelGasto.toFixed(2)),
-                consumoMedio: parseFloat(consumoMedio.toFixed(1)),
+                consumoMedio: parseFloat(consumoMedio.toFixed(2)),
                 alertas: totalAlertas,
                 carrosConsumo
             };
+
+            console.log('✅ Estatísticas calculadas:', estatisticas);
 
             return res.status(200).json({
                 message: "Estatísticas do Dashboard retornadas com sucesso",
@@ -153,7 +203,7 @@ export default class CarroController {
             });
 
         } catch (error) {
-            console.error('Erro ao buscar estatísticas do dashboard:', error);
+            console.error('❌ Erro ao buscar estatísticas do dashboard:', error);
             return res.status(500).json({
                 message: 'Erro ao buscar estatísticas do dashboard',
                 erro: error.message

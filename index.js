@@ -13,18 +13,20 @@ dotenv.config();
 
 const app = express();
 
-// Configura CORS com variável de ambiente
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+const frontendUrlsString = process.env.FRONTEND_URL || "http://localhost:5173";
 
+const allowedOrigins = frontendUrlsString.split(',').map(url => url.trim());
+
+// Configura CORS para Express
 app.use(cors({
     credentials: true,
-    origin: FRONTEND_URL
+    origin: allowedOrigins
 }))
 
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: allowedOrigins,
     credentials: true
   }
 });
@@ -62,5 +64,5 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 API rodando na porta ${PORT}`);
   console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 CORS habilitado para: ${FRONTEND_URL}`);
+  console.log(`🔗 CORS habilitado para: ${allowedOrigins.join(', ')}`);
 });
