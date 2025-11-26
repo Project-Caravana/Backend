@@ -16,7 +16,6 @@ export default class AuthController {
             
             const funcionario = await Funcionario.findOne({ email }).select('+senha').populate('empresa');
             
-            
             if (!funcionario) {
                 return res.status(401).json({ 
                     message: 'Email ou senha incorretos' 
@@ -44,18 +43,12 @@ export default class AuthController {
                 });
             }
             
-            // Perfil agora já é string no banco
+            // ✅ MUDANÇA: Gera token e envia no response JSON
             const token = gerarToken(funcionario._id);
-
-            res.cookie('auth_token', token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'strict',
-                maxAge: 7 * 24 * 60 * 60 * 1000
-            });
             
             return res.status(200).json({ 
                 message: 'Login realizado com sucesso!',
+                token, // ⭐ Token agora vem no JSON
                 funcionario: {
                     id: funcionario._id,
                     nome: funcionario.nome,
@@ -77,13 +70,7 @@ export default class AuthController {
     }
 
     static async logout(req, res) {
-        res.cookie('auth_token', '', {
-            httpOnly: true, 
-            secure: process.env.NODE_ENV === 'production', 
-            sameSite: 'strict', 
-            maxAge: 0 // Expira imediatamente
-        });
-
+        // Logout agora é apenas client-side (limpar localStorage)
         return res.status(200).json({
             message: 'Logout realizado com sucesso!'
         });
@@ -129,7 +116,6 @@ export default class AuthController {
                 empresaEnderecoEstado, empresaEnderecoCep
              } = req.body;
             
-            // Verifica se empresa existe
             const empresaExiste = await Empresa.findOne({ cnpj: empresaCnpj });
             if (empresaExiste) {
                 return res.status(404).json({ 
@@ -137,7 +123,6 @@ export default class AuthController {
                 });
             }
             
-            // Verifica se CPF já existe
             const cpfExiste = await Funcionario.findOne({ cpf });
             if (cpfExiste) {
                 return res.status(422).json({ 
@@ -145,7 +130,6 @@ export default class AuthController {
                 });
             }
             
-            // Verifica se email já existe
             const emailExiste = await Funcionario.findOne({ email });
             if (emailExiste) {
                 return res.status(422).json({ 
@@ -171,7 +155,6 @@ export default class AuthController {
             });
             await empresa.save();
             
-            // Cria funcionário
             const funcionario = new Funcionario({
                 nome, cpf, email, senha: senhaHash, telefone, empresa: empresa._id, perfil: "admin", ativo: true
             });

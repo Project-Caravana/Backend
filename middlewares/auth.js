@@ -2,30 +2,30 @@ import jwt from "jsonwebtoken";
 import Empresa from "../models/Empresa.js";
 import Funcionario from "../models/Funcionario.js";
 
-// Middleware principal - verifica se está autenticado
 export const verificarAutenticacao = async (req, res, next) => {
-    
     try {
-        // Pega o token do header
-        const token = req.cookies.auth_token;
+        // ✅ MUDANÇA: Pega token do header Authorization
+        const authHeader = req.headers.authorization;
         
-        if (!token) {
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
             return res.status(401).json({ 
                 message: 'Token não fornecido. Acesso negado.' 
             });
         }
 
+        // Remove "Bearer " do início
+        const token = authHeader.substring(7);
+
         // Verifica e decodifica o token
         const decoded = jwt.verify(token, process.env.JWT_SECRET);        
         
-        // Busca o usuário baseado no tipo
         if (decoded) {
             const funcionario = await Funcionario.findById(decoded.id);
             const empresa = await Empresa.findById(funcionario.empresa);
             
             if (!funcionario) {
                 return res.status(401).json({ 
-                    message: 'Empresa não encontrada' 
+                    message: 'Funcionário não encontrado' 
                 });
             }
             
@@ -78,18 +78,14 @@ export const verificarAutenticacao = async (req, res, next) => {
 
 export const podeGerenciarFuncionarios = async (req, res, next) => {
     try {
-        // Empresa (admin) pode criar qualquer tipo de funcionário
         if (req.funcionario.perfil === "admin") {
             return next();
         }
 
-        // Funcionário só pode criar se for admin
         if (req.funcionario.perfil === "funcionario") {
             const perfilCriando = req.body.perfil;
             
-            // Se for funcionário comum, só pode criar motorista
             if (perfilCriando === 'funcionario') {
-                // VERIFICAÇÃO CRÍTICA: Impedir criação de 'funcionario' ou 'admin'
                 if (perfilCriando !== 'motorista') {
                     return res.status(403).json({ 
                         message: 'Funcionários só podem criar motoristas. Para criar admins ou funcionários, entre em contato com um administrador.' 
@@ -99,7 +95,6 @@ export const podeGerenciarFuncionarios = async (req, res, next) => {
                 return next();
             }
             
-            // Motoristas não podem criar outros funcionários
             return res.status(403).json({ 
                 message: 'Você não tem permissão para criar funcionários' 
             });
@@ -117,7 +112,6 @@ export const podeGerenciarFuncionarios = async (req, res, next) => {
     }
 };
 
-// Middleware - apenas empresas podem acessar
 export const apenasAdmin = (req, res, next) => {
     if (req.funcionario.perfil !== 'admin') {
         return res.status(403).json({ 
@@ -127,7 +121,6 @@ export const apenasAdmin = (req, res, next) => {
     next();
 };
 
-// Middleware - apenas funcionários podem acessar
 export const apenasFuncionario = (req, res, next) => {
     if (req.funcionario.perfil !== 'funcionario' || req.funcionario.perfil !== 'admin') {
         return res.status(403).json({ 
@@ -137,7 +130,6 @@ export const apenasFuncionario = (req, res, next) => {
     next();
 };
 
-// Middleware - verifica se o usuário tem permissão para acessar recurso da empresa
 export const verificarEmpresa = (req, res, next) => {
     const empresaId = req.params.empresaId || req.body.empresa || req.query.empresaId;
     
@@ -147,7 +139,6 @@ export const verificarEmpresa = (req, res, next) => {
         });
     }
     
-    // Se for admin, verifica se é a mesma
     if (req.funcionario.perfil === 'admin') {
         if (req.empresa._id.toString() !== empresaId) {
             return res.status(403).json({ 
@@ -156,7 +147,6 @@ export const verificarEmpresa = (req, res, next) => {
         }
     }
     
-    // Se for funcionário, verifica se pertence à empresa
     if (req.funcionario.perfil === 'funcionario') {
         if (req.empresa._id.toString() !== empresaId) {
             return res.status(403).json({ 
